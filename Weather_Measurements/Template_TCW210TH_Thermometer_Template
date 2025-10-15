@@ -1,0 +1,166 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    -
+      uuid: 0ba29c6a1afa4f58ab03a26162c72274
+      name: Environment
+    -
+      uuid: 57b7ae836ca64446ba2c296389c009b7
+      name: Templates/Modules
+  templates:
+    -
+      uuid: 3d97d92f6dd5447eb475d1c4d921d632
+      template: 'Template TCW210TH Thermometer'
+      name: 'Template TCW210TH Thermometer'
+      description: 'SNMP-based template for Teracom TCW210TH Thermometer'
+      templates:
+        -
+          name: 'Template Module ICMP Ping'
+      groups:
+        -
+          name: Environment
+      items:
+        -
+          uuid: 21a775563b724288beabf3946142fdaa
+          name: 'Temperature'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.38783.4.3.1.3.1.0'
+          key: 'sensor.temperature'
+          delay: '5m'
+          history: '90d'
+          value_type: FLOAT
+          units: 'C'
+          tags:
+            -
+              tag: Application
+              value: 'Environmental data'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - '([0-9]+)'
+                - '\1'
+            -
+              type: MULTIPLIER
+              parameters:
+                - '0.001'
+          triggers:
+            -
+              uuid: 153072d441314888bdf10e4123bf3d50
+              expression: 'last(/Template TCW210TH Thermometer/sensor.temperature)>{$TEMP_WARN}'
+              name: 'TCW210TH Temperature above 26 C'
+              priority: WARNING
+              description: 'Temperature exceeds 26°C.'
+            -
+              uuid: f3c4281bb3774a8ea6adfa49f6668e95
+              expression: 'last(/Template TCW210TH Thermometer/sensor.temperature)>{$TEMP_CRIT}'
+              name: 'TCW210TH Temperature above 28 C'
+              priority: HIGH
+              description: 'Temperature exceeds 28°C.'
+        -
+          uuid: a8c1e36253f34e06abc11c54d5644723
+          name: 'System Description'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.1.1.0'
+          key: 'system.description'
+          delay: '1d'
+          history: '90d'
+          value_type: TEXT
+          tags:
+            -
+              tag: Application
+              value: 'System info'
+        -
+          uuid: 8fee2c814b57471885d2e39e06f9bbb9
+          name: 'System Uptime'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.1.3.0'
+          key: 'system.uptime'
+          delay: '5m'
+          history: '90d'
+          value_type: UNSIGNED
+          units: 's'
+          tags:
+            -
+              tag: Application
+              value: 'System info'
+          preprocessing:
+            -
+              type: MULTIPLIER
+              parameters:
+                - '0.01'
+        -
+          uuid: 292d711b164b441a94aebd09b74d8228
+          name: 'Humidity'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.38783.4.3.1.3.2.0'
+          key: 'sensor.humidity'
+          delay: '5m'
+          history: '90d'
+          value_type: FLOAT
+          units: '%'
+          tags:
+            -
+              tag: Application
+              value: 'Environmental data'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - '([0-9]+)'
+                - '\1'
+            -
+              type: MULTIPLIER
+              parameters:
+                - '0.001'
+          triggers:
+            -
+              uuid: b90b8c1ad0dc42f194acd6d6faf1a4d4
+              expression: 'last(/Template TCW210TH Thermometer/sensor.humidity)<{$HUMIDITY_WARN}'
+              name: 'TCW210TH Humidity below 30%'
+              priority: WARNING
+              description: 'Humidity drops below 30%.'
+            -
+              uuid: 46bcfa1170e9492ba9f447c23aaa1399
+              expression: 'last(/Template TCW210TH Thermometer/sensor.humidity)<{$HUMIDITY_CRIT}'
+              name: 'TCW210TH Humidity below 25%'
+              priority: HIGH
+              description: 'Humidity drops below 25%.'
+      macros:
+        -
+          macro: '{$TEMP_WARN}'
+          value: '26'
+        -
+          macro: '{$TEMP_CRIT}'
+          value: '28'
+        -
+          macro: '{$HUMIDITY_WARN}'
+          value: '30'
+        -
+          macro: '{$HUMIDITY_CRIT}'
+          value: '25'
+        -
+          macro: '{$HISTORYSP}'
+          value: '90d'
+        -
+          macro: '{$UPDATE_INTERVAL}'
+          value: '5m'
+  graphs:
+    -
+      uuid: 0e99fc1feb584f898ed2d3bfdad0908e
+      name: 'TCW210TH Temperature Graph'
+      graph_items:
+        -
+          color: '1A7C11'
+          item:
+            host: 'Template TCW210TH Thermometer'
+            key: 'sensor.temperature'
+    -
+      uuid: 0189e2c10dc44d418e55654827c157a6  # New UUID from your list
+      name: 'TCW210TH Humidity Graph'
+      graph_items:
+        -
+          color: 'F28C38'
+          item:
+            host: 'Template TCW210TH Thermometer'
+            key: 'sensor.humidity'
