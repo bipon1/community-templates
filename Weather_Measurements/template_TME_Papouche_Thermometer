@@ -1,0 +1,229 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    -
+      uuid: 0ba29c6a1afa4f58ab03a26162c72274
+      name: Environment
+    -
+      uuid: 57b7ae836ca64446ba2c296389c009b7
+      name: Templates/Modules
+  templates:
+    -
+      uuid: 37e5eb5606bc4abba66c8b20381a1e8a
+      template: 'Template Module ICMP Ping'
+      name: 'Template Module ICMP Ping'
+      description: 'ICMP Ping monitoring for TME device'
+      groups:
+        -
+          name: Templates/Modules
+      items:
+        -
+          uuid: db5a94f6cea14deba957202b2f014469
+          name: 'ICMP ping'
+          type: SIMPLE
+          key: icmpping
+          delay: '60s'
+          history: '1w'
+          valuemap:
+            name: 'Service state'
+          tags:
+            -
+              tag: Application
+              value: Status
+          triggers:
+            -
+              uuid: b030876299434f3ba43e11c584104a81
+              expression: 'max(/Template Module ICMP Ping/icmpping,#3)=0'
+              name: 'Unavailable by ICMP ping'
+              priority: HIGH
+              description: 'Last value: {ITEM.LASTVALUE1}. Last three attempts returned timeout.'
+        -
+          uuid: 04b21adaf422473a88df2c52786474ed
+          name: 'ICMP loss'
+          type: SIMPLE
+          key: icmppingloss
+          delay: '60s'
+          history: '1w'
+          value_type: FLOAT
+          units: '%'
+          tags:
+            -
+              tag: Application
+              value: Status
+          triggers:
+            -
+              uuid: 42c4b0310aaf4b9c8cb502542b7dea90
+              expression: 'min(/Template Module ICMP Ping/icmppingloss,5m)>{$ICMP_LOSS_WARN} and min(/Template Module ICMP Ping/icmppingloss,5m)<100'
+              name: 'High ICMP ping loss'
+              priority: WARNING
+              dependencies:
+                -
+                  name: 'Unavailable by ICMP ping'
+                  expression: 'max(/Template Module ICMP Ping/icmpping,#3)=0'
+        -
+          uuid: a79e33e5fd264725b934f603fa071555
+          name: 'ICMP response time'
+          type: SIMPLE
+          key: icmppingsec
+          delay: '60s'
+          history: '1w'
+          value_type: FLOAT
+          units: 's'
+          tags:
+            -
+              tag: Application
+              value: Status
+          triggers:
+            -
+              uuid: 32b4d8f3eba34bd380803410111d4b7f
+              expression: 'avg(/Template Module ICMP Ping/icmppingsec,5m)>{$ICMP_RESPONSE_TIME_WARN}'
+              name: 'High ICMP ping response time'
+              priority: WARNING
+              dependencies:
+                -
+                  name: 'High ICMP ping loss'
+                  expression: 'min(/Template Module ICMP Ping/icmppingloss,5m)>{$ICMP_LOSS_WARN} and min(/Template Module ICMP Ping/icmppingloss,5m)<100'
+                -
+                  name: 'Unavailable by ICMP ping'
+                  expression: 'max(/Template Module ICMP Ping/icmpping,#3)=0'
+      macros:
+        -
+          macro: '{$ICMP_LOSS_WARN}'
+          value: '20'
+        -
+          macro: '{$ICMP_RESPONSE_TIME_WARN}'
+          value: '0.15'
+      valuemaps:
+        -
+          uuid: bdb5d65d925542eaa61c302dc40fbfe8
+          name: 'Service state'
+          mappings:
+            -
+              value: '0'
+              newvalue: Down
+            -
+              value: '1'
+              newvalue: Up
+    -
+      uuid: b1f4c2b62caf4587af5f1e335d3b14c2
+      template: 'Template TME Thermometer'
+      name: 'Template TME Thermometer'
+      description: 'SNMP-based template for Papouch TME Thermometer'
+      templates:
+        -
+          name: 'Template Module ICMP Ping'
+      groups:
+        -
+          name: Environment
+      items:
+        -
+          uuid: 7538bdbe20284e359d3d1bf4598605b4
+          name: 'Temperature'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.18248.1.1.2.0'
+          key: 'sensor.temperature'
+          delay: '5m'
+          history: '90d'
+          value_type: FLOAT
+          units: 'C'
+          tags:
+            -
+              tag: Application
+              value: 'Environmental data'
+          preprocessing:
+            -
+              type: REGEX
+              parameters:
+                - '([+-]?[0-9]+.[0-9])'
+                - '\1'
+          triggers:
+            -
+              uuid: dd111db23af641ee8f6bf82246e97de7
+              expression: 'last(/Template TME Thermometer/sensor.temperature)>{$TEMP_WARN}'
+              name: 'Temperature above 26 C'
+              priority: WARNING
+              description: 'Temperature exceeds 26°C.'
+            -
+              uuid: 5e927b30195c4c3993d4e07a4c36dd09
+              expression: 'last(/Template TME Thermometer/sensor.temperature)>{$TEMP_CRIT}'
+              name: 'Temperature above 28 C'
+              priority: HIGH
+              description: 'Temperature exceeds 28°C.'
+        -
+          uuid: 54f4e913aee24d53a888cf7ac9738f41
+          name: 'System Description'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.1.1.0'
+          key: 'system.description'
+          delay: '1d'
+          history: '90d'
+          value_type: TEXT
+          tags:
+            -
+              tag: Application
+              value: 'System info'
+        -
+          uuid: 88f1b227a25a4ffb9d21e634ea23c71c
+          name: 'System Uptime'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.1.3.0'
+          key: 'system.uptime'
+          delay: '5m'
+          history: '90d'
+          value_type: UNSIGNED
+          units: 'timeticks'
+          tags:
+            -
+              tag: Application
+              value: 'System info'
+        -
+          uuid: 4f60048d23d0478a97c6a88efed0100f
+          name: 'Interface In Octets'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.2.2.1.10.1'
+          key: 'if.in.octets'
+          delay: '5m'
+          history: '90d'
+          value_type: UNSIGNED
+          units: 'bytes'
+          tags:
+            -
+              tag: Application
+              value: 'Network'
+        -
+          uuid: a3e21714bae34347b58ddf91013f7c92
+          name: 'Interface Out Octets'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.2.2.1.16.1'
+          key: 'if.out.octets'
+          delay: '5m'
+          history: '90d'
+          value_type: UNSIGNED
+          units: 'bytes'
+          tags:
+            -
+              tag: Application
+              value: 'Network'
+      macros:
+        -
+          macro: '{$TEMP_WARN}'
+          value: '26'
+        -
+          macro: '{$TEMP_CRIT}'
+          value: '28'
+        -
+          macro: '{$HISTORYSP}'
+          value: '90d'
+        -
+          macro: '{$UPDATE_INTERVAL}'
+          value: '5m'
+  graphs:
+    -
+      uuid: 88f1b227a25a4ffb9d21e634ea23c71c
+      name: 'Temperature Graph'
+      graph_items:
+        -
+          color: '1A7C11'
+          item:
+            host: 'Template TME Thermometer'
+            key: 'sensor.temperature'
