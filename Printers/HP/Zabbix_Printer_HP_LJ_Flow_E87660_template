@@ -1,0 +1,348 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 60f1dce8720d41eab748470cd7d4746e
+      name: Printers
+    - uuid: 7df96b18c230490a9a0a9e2307226338
+      name: Templates
+  templates:
+    - uuid: 86338a3bc950467bbd5932c4cd1b56a4
+      template: 'Printer HP Color LaserJet Flow E87660'
+      name: 'Printer HP Color LaserJet Flow E87660'
+      groups:
+        - name: Printers
+        - name: Templates
+      items:
+        - uuid: a81c32cac9a840398eabcbd9a9686ee0
+          name: 'Printer model'
+          type: SNMP_AGENT
+          snmp_oid: .1.3.6.1.2.1.43.5.1.1.16.1
+          key: model
+          delay: '43200'
+          history: 7d
+          value_type: TEXT
+          trends: '0'
+          inventory_link: TYPE
+          tags:
+            - tag: Application
+              value: 'Printer information'
+        - uuid: 6bdef9bc5c9241ee8fa79e33c8c95529
+          name: 'Pages printed - total'
+          type: SNMP_AGENT
+          snmp_oid: .1.3.6.1.2.1.43.10.2.1.4.1.1
+          key: pages.printed.total
+          delay: '360'
+          history: 7d
+          trends: '0'
+          tags:
+            - tag: Application
+              value: 'Pages printed'
+        - uuid: b70e404c2fc34619a4acd8524f2d7af8
+          name: 'Printer location'
+          type: SNMP_AGENT
+          snmp_oid: .1.3.6.1.2.1.1.4.0
+          key: printer.location
+          delay: '3600'
+          history: 7d
+          value_type: TEXT
+          trends: '0'
+          tags:
+            - tag: Application
+              value: 'Printer information'
+        - uuid: 12eab848849a48679ac0585b37ba71df
+          name: 'Serial number'
+          type: SNMP_AGENT
+          snmp_oid: .1.3.6.1.2.1.43.5.1.1.17.1
+          key: serial.number
+          delay: '43200'
+          history: 7d
+          value_type: TEXT
+          trends: '0'
+          tags:
+            - tag: Application
+              value: 'Printer information'
+      discovery_rules:
+        - uuid: f34dd39793764b92b8e4321ad0645a8d
+          name: 'Printer Supplies Discovery'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#SUPPLY_DESC},.1.3.6.1.2.1.43.11.1.1.6.1,{#SUPPLY_TYPE},.1.3.6.1.2.1.43.11.1.1.5.1]'
+          key: prtMarkerSuppliesDiscovery
+          delay: 5m
+          filter:
+            conditions:
+              - macro: '{#SUPPLY_TYPE}'
+                value: ^(9|10|15|20|21)$
+                formulaid: A
+          item_prototypes:
+            - uuid: 04bde7f14b284471a6d2309052c9c3f0
+              name: 'Supply {#SUPPLY_DESC} Current Level'
+              type: SNMP_AGENT
+              snmp_oid: '.1.3.6.1.2.1.43.11.1.1.9.1.{#SNMPINDEX}'
+              key: 'supply.current[{#SNMPINDEX}]'
+              delay: 5m
+              history: 7d
+              value_type: FLOAT
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var val = parseFloat(value);
+                      if (val === -3) {
+                          return 50;  // Map "unknown but some remains" to 50% for drums/staplers
+                      } else if (val === -2) {
+                          return 100;  // Map "unknown capacity" to full for max level monitoring
+                      } else if (val < 0) {
+                          return 0;  // Any other negative = empty/low for alerts
+                      } else {
+                          return val;  // Keep positive values as-is for toner/drums
+                      }
+              tags:
+                - tag: Application
+                  value: 'Consumables level'
+            - uuid: 2bc325bc51524ae08a7af57ae57492ac
+              name: 'Supply {#SUPPLY_DESC} Custom Status'
+              type: DEPENDENT
+              key: 'supply.custom.status[{#SNMPINDEX}]'
+              delay: '0'
+              value_type: TEXT
+              trends: '0'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var level = value;
+                      if (parseFloat(level) > 20) {
+                          return 'OK';
+                      } else {
+                          return 'Low';
+                      }
+              master_item:
+                key: 'supply.level.percent[{#SNMPINDEX}]'
+            - uuid: e017b407333b4e1384502190a8c964e6
+              name: 'Supply {#SUPPLY_DESC} HP Status'
+              type: SNMP_AGENT
+              snmp_oid: '.1.3.6.1.4.1.11.2.3.9.4.2.1.4.1.10.7.{#SNMPINDEX}.0'
+              key: 'supply.hp.status[{#SNMPINDEX}]'
+              value_type: TEXT
+              trends: '0'
+              status: DISABLED
+              discover: NO_DISCOVER
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var hex = value.trim();
+                      if (hex.match(/^[0-9A-Fa-f ]+$/)) {
+                          var bits = parseInt(hex.replace(/ /g, ''), 16);
+                          if (bits & 0x00000001) return 'Low'; // Bit 0 (Low) first
+                          if (bits & 0x00000008) return 'Warning'; // Bit 3 (Warning)
+                          if (bits === 0) return 'OK'; // 0x00000000 = OK
+                          if (bits & 0x00000002) return 'Out'; // Bit 1 (Out)
+                          if (bits & 0x00000004) return 'Failure'; // Bit 2 (Failure)
+                          if (bits & 0x80000000) return 'Installed'; // Bit 31 (Installed) as fallback
+                          return 'Unknown';
+                      }
+                      // Non-hex case
+                      var val = parseInt(hex, 10);
+                      var statusMap = { 0: 'OK', 11: 'Low', 12: 'Out', 18: 'Failure' };
+                      return statusMap[val] || 'Unknown';
+            - uuid: b07ab05d65ac4c0c9011860eda11faef
+              name: 'Supply {#SUPPLY_DESC} HP Usage Count'
+              type: SNMP_AGENT
+              snmp_oid: '.1.3.6.1.4.1.11.2.3.9.4.2.1.4.1.10.11.{#SNMPINDEX}.0'
+              key: 'supply.hp.usage[{#SNMPINDEX}]'
+            - uuid: 61101439906c4f4f8ef2f69d71c31ce0
+              name: 'Supply {#SUPPLY_DESC} Level %'
+              type: CALCULATED
+              key: 'supply.level.percent[{#SNMPINDEX}]'
+              delay: 5m
+              history: 7d
+              units: '%'
+              params: 'last(//supply.current[{#SNMPINDEX}])/last(//supply.maxlevel[{#SNMPINDEX}])*100'
+              tags:
+                - tag: Application
+                  value: 'Consumables level %'
+              trigger_prototypes:
+                - uuid: 803def7cbe8e48c7885df8d9c2c7937f
+                  expression: 'last(/Printer HP Color LaserJet Flow E87660/supply.level.percent[{#SNMPINDEX}])<5'
+                  name: 'Critical supply {#SUPPLY_DESC}'
+                  priority: HIGH
+                - uuid: 4c51516c3e9f4fb08bb301307a9a93b2
+                  expression: 'last(/Printer HP Color LaserJet Flow E87660/supply.level.percent[{#SNMPINDEX}])<15'
+                  name: 'Low supply {#SUPPLY_DESC}'
+                  priority: WARNING
+                  dependencies:
+                    - name: 'Critical supply {#SUPPLY_DESC}'
+                      expression: 'last(/Printer HP Color LaserJet Flow E87660/supply.level.percent[{#SNMPINDEX}])<5'
+            - uuid: 07e2aff2877a470db8c5a276a00d5f1a
+              name: 'Supply {#SUPPLY_DESC} Max Level %'
+              type: SNMP_AGENT
+              snmp_oid: '.1.3.6.1.2.1.43.11.1.1.8.1.{#SNMPINDEX}'
+              key: 'supply.maxlevel[{#SNMPINDEX}]'
+              delay: 5m
+              history: 7d
+              value_type: FLOAT
+              units: '%'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var val = parseFloat(value);
+                      if (val === -3) {
+                          return 50;  // Map "unknown but some remains" to 50% for drums/staplers
+                      } else if (val === -2) {
+                          return 100;  // Map "unknown capacity" to full for max level monitoring
+                      } else if (val < 0) {
+                          return 0;  // Any other negative = empty/low for alerts
+                      } else {
+                          return val;  // Keep positive values as-is for toner/drums
+                      }
+              tags:
+                - tag: Application
+                  value: 'Consumables level'
+            - uuid: df983f95815d4e8e9cd8bbd8f50e386f
+              name: 'Supply {#SUPPLY_DESC} Max Yield (HP)'
+              type: SNMP_AGENT
+              snmp_oid: '.1.3.6.1.4.1.11.2.3.9.4.2.1.4.1.10.5.1.4.{#SNMPINDEX}.0'
+              key: 'supply.maxyield.hp[{#SNMPINDEX}]'
+              delay: 5m
+              history: 7d
+              tags:
+                - tag: Application
+                  value: 'Consumables capacity'
+          graph_prototypes:
+            - uuid: 455db89c08d848c8981808d42ab89ee2
+              name: 'Supply {#SUPPLY_DESC} Usage vs Max'
+              width: '200'
+              height: '100'
+              yaxismax: '160000'
+              ymin_type_1: FIXED
+              ymax_type_1: FIXED
+              graph_items:
+                - drawtype: DASHED_LINE
+                  color: FF0000
+                  calc_fnc: ALL
+                  item:
+                    host: 'Printer HP Color LaserJet Flow E87660'
+                    key: 'supply.maxyield.hp[{#SNMPINDEX}]'
+                - sortorder: '1'
+                  drawtype: BOLD_LINE
+                  color: '274482'
+                  calc_fnc: ALL
+                  item:
+                    host: 'Printer HP Color LaserJet Flow E87660'
+                    key: 'supply.hp.usage[{#SNMPINDEX}]'
+            - uuid: 5ac6922fc14b4944bfd305c354acdb65
+              name: 'Supply {#SUPPLY_DESC} Usage vs Max (3D)'
+              width: '150'
+              height: '250'
+              yaxismax: '0'
+              show_work_period: 'NO'
+              show_triggers: 'NO'
+              type: EXPLODED
+              show_3d: 'YES'
+              graph_items:
+                - color: FF0000
+                  calc_fnc: MIN
+                  item:
+                    host: 'Printer HP Color LaserJet Flow E87660'
+                    key: 'supply.maxyield.hp[{#SNMPINDEX}]'
+                - sortorder: '1'
+                  color: '274482'
+                  calc_fnc: MIN
+                  item:
+                    host: 'Printer HP Color LaserJet Flow E87660'
+                    key: 'supply.hp.usage[{#SNMPINDEX}]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  // Parse the input JSON string
+                  var data = JSON.parse(value);
+                  
+                  // Initialize result array
+                  var result = [];
+                  
+                  // Process each entry in the input data
+                  for (var i = 0; i < data.length; i++) {
+                      var hex = data[i]["{#SUPPLY_DESC}"].trim().split(' ');
+                      var snmpIndex = data[i]["{#SNMPINDEX}"]; // Extract SNMPINDEX
+                      var supplyType = data[i]["{#SUPPLY_TYPE}"]; // Extract SUPPLY_TYPE
+                      var cleanedText = '';
+                      var j = 0;
+                  
+                      while (j < hex.length) {
+                          var code = parseInt(hex[j], 16);
+                          
+                          // Handle UTF-8 multi-byte sequences
+                          if (code >= 0xC0 && code <= 0xDF && j + 1 < hex.length) {
+                              var code2 = parseInt(hex[j + 1], 16);
+                              if (code2 >= 0x80 && code2 <= 0xBF) {
+                                  var utf8Code = ((code & 0x1F) << 6) | (code2 & 0x3F);
+                                  cleanedText += String.fromCharCode(utf8Code);
+                                  j += 2;
+                                  continue;
+                              }
+                          } else if (code >= 0xE0 && code <= 0xEF && j + 2 < hex.length) {
+                              var code2 = parseInt(hex[j + 1], 16);
+                              var code3 = parseInt(hex[j + 2], 16);
+                              if (code2 >= 0x80 && code2 <= 0xBF && code3 >= 0x80 && code3 <= 0xBF) {
+                                  var utf8Code = ((code & 0x0F) << 12) | ((code2 & 0x3F) << 6) | (code3 & 0x3F);
+                                  cleanedText += String.fromCharCode(utf8Code);
+                                  j += 3;
+                                  continue;
+                              }
+                          }
+                  
+                          // Single-byte ASCII or Latin-1
+                          if (code >= 32 && code <= 255) {
+                              if (code >= 160 && code <= 255) {
+                                  cleanedText += String.fromCharCode(code);
+                              } else if (code >= 128 && code < 160) {
+                                  var map = {
+                                      128: '€', 130: '‚', 131: 'ƒ', 132: '„', 133: '…', 134: '†', 135: '‡',
+                                      136: 'ˆ', 137: '‰', 138: 'Š', 139: '‹', 140: 'Œ', 142: 'Ž', 145: '‘',
+                                      146: '’', 147: '“', 148: '”', 149: '•', 150: '–', 151: '—', 152: '˜',
+                                      153: '™', 154: 'š', 155: '›', 156: 'œ', 158: 'ž', 159: 'Ÿ'
+                                  };
+                                  cleanedText += map[code] || String.fromCharCode(code);
+                              } else {
+                                  cleanedText += String.fromCharCode(code);
+                              }
+                          }
+                          j++;
+                      }
+                  
+                      // Add to result array with SNMPINDEX, cleaned SUPPLY_DESC, and SUPPLY_TYPE
+                      if (cleanedText.length > 0) {
+                          result.push({ "{#SNMPINDEX}": snmpIndex, "{#SUPPLY_DESC}": cleanedText, "{#SUPPLY_TYPE}": supplyType });
+                      }
+                  }
+                  
+                  // Return JSON array
+                  return JSON.stringify(result);
+      dashboards:
+        - uuid: d5983a51e99a45e79c345a90009a3a0b
+          name: 'Printer Supplies Summary'
+          display_period: '600'
+          pages:
+            - widgets:
+                - type: graphprototype
+                  name: 'Supplies Levels - Graphs'
+                  width: '72'
+                  height: '28'
+                  fields:
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Printer HP Color LaserJet Flow E87660'
+                        name: 'Supply {#SUPPLY_DESC} Usage vs Max'
+                    - type: STRING
+                      name: reference
+                      value: DZHCS
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '900'
+                    - type: INTEGER
+                      name: rows
+                      value: '7'
